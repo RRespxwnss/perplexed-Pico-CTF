@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Byte Calc — RE Tool</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600;700&family=Syne:wght@400;700;800&display=swap');
+
+:root {
+  --bg: #080a0e;
+  --surface: #0e1118;
+  --panel: #131720;
+  --border: #1c2235;
+  --border2: #242d45;
+  --accent: #00e5ff;
+  --accent-dim: rgba(0,229,255,0.12);
+  --green: #00ff88;
+  --green-dim: rgba(0,255,136,0.1);
+  --red: #ff4566;
+  --red-dim: rgba(255,69,102,0.1);
+  --yellow: #ffcc00;
+  --purple: #b388ff;
+  --text: #c5cfe8;
+  --dim: #4a5578;
+  --dim2: #2a3355;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+  min-height: 100vh;
+  padding: 32px 20px 60px;
+}
+
+/* scanline overlay */
+body::after {
+  content:'';
+  position:fixed;
+  inset:0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,0,0,0.08) 2px,
+    rgba(0,0,0,0.08) 4px
+  );
+  pointer-events:none;
+  z-index:999;
+}
+
+.wrap { max-width: 780px; margin: 0 auto; }
+
+/* Header */
+header {
+  margin-bottom: 36px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 20px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.logo {
+  font-family: 'Syne', sans-serif;
+  font-weight: 800;
+  font-size: 28px;
+  color: #fff;
+  letter-spacing: -1px;
+}
+.logo span { color: var(--accent); }
+
+.tag {
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--dim);
+  border: 1px solid var(--border2);
+  padding: 4px 10px;
+  border-radius: 2px;
+}
+
+/* Section titles */
+.section-label {
+  font-size: 10px;
+  letter-spacing: 3px;
+  color: var(--dim);
+  text-transform: uppercase;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.section-label::after {
+  content:'';
+  flex:1;
+  height:1px;
+  background: var(--border);
+}
+
+/* Single converter */
+.single-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 24px;
+  margin-bottom: 28px;
+}
+
+.input-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.input-field {
+  background: var(--panel);
+  border: 1px solid var(--border2);
+  color: var(--accent);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 20px;
+  padding: 12px 18px;
+  border-radius: 6px;
+  width: 200px;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.input-field:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(0,229,255,0.1);
+}
+.input-field::placeholder { color: var(--dim); font-size: 14px; }
+
+.input-hint {
+  font-size: 11px;
+  color: var(--dim);
+  line-height: 1.6;
+}
+
+/* Results grid */
+.results {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.result-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 14px 16px;
+  transition: border-color 0.2s;
+  position: relative;
+  overflow: hidden;
+}
+
+.result-card::before {
+  content:'';
+  position:absolute;
+  top:0; left:0; right:0;
+  height:2px;
+  opacity:0;
+  transition: opacity 0.3s;
+}
+.result-card.has-value::before { opacity:1; }
+.result-card.c-hex::before { background: var(--accent); }
+.result-card.c-dec::before { background: var(--green); }
+.result-card.c-bin::before { background: var(--purple); }
+.result-card.c-neg::before { background: var(--red); }
+.result-card.c-char::before { background: var(--yellow); }
+
+.rc-label {
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: var(--dim);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+}
+
+.rc-value {
+  font-size: 22px;
+  font-weight: 700;
+  color: #fff;
+  word-break: break-all;
+  min-height: 30px;
+}
+
+.c-hex .rc-value { color: var(--accent); }
+.c-dec .rc-value { color: var(--green); }
+.c-bin .rc-value { font-size: 11px; color: var(--purple); line-height: 1.8; }
+.c-neg .rc-value { color: var(--red); }
+.c-char .rc-value { color: var(--yellow); font-size: 32px; }
+
+.rc-sub { font-size: 11px; color: var(--dim); margin-top: 4px; }
+
+/* Bit bar */
+.bit-bar {
+  display: flex;
+  gap: 3px;
+  margin-top: 16px;
+  flex-wrap: nowrap;
+  justify-content: center;
+}
+
+.bit-cell {
+  flex: 1;
+  min-width: 0;
+  aspect-ratio: 1;
+  max-width: 40px;
+  border-radius: 3px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  border: 1px solid var(--border2);
+  background: var(--panel);
+  color: var(--dim);
+  transition: all 0.15s;
+  cursor: default;
+  user-select: none;
+}
+.bit-cell.on {
+  background: rgba(0,229,255,0.15);
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 8px rgba(0,229,255,0.2);
+}
+.bit-cell .bit-pos {
+  font-size: 8px;
+  color: var(--dim);
+  margin-top: 2px;
+}
+
+/* Batch converter */
+.batch-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 24px;
+  margin-bottom: 28px;
+}
+
+.batch-hint {
+  font-size: 11px;
+  color: var(--dim);
+  margin-bottom: 12px;
+  line-height: 1.7;
+}
+
+.batch-input {
+  background: var(--panel);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  padding: 14px;
+  border-radius: 6px;
+  width: 100%;
+  min-height: 100px;
+  outline: none;
+  resize: vertical;
+  line-height: 1.8;
+  transition: border-color 0.2s;
+}
+.batch-input:focus { border-color: var(--accent); }
+.batch-input::placeholder { color: var(--dim); }
+
+.batch-actions {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0;
+  flex-wrap: wrap;
+}
+
+.btn {
+  background: var(--panel);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+  letter-spacing: 1px;
+}
+.btn:hover { border-color: var(--accent); color: var(--accent); }
+.btn.primary {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* Batch results table */
+.batch-table-wrap {
+  overflow-x: auto;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+thead th {
+  background: var(--panel);
+  padding: 8px 14px;
+  text-align: left;
+  color: var(--dim);
+  letter-spacing: 1px;
+  font-size: 10px;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+tbody tr { transition: background 0.15s; }
+tbody tr:hover td { background: rgba(255,255,255,0.02); }
+
+tbody td {
+  padding: 8px 14px;
+  border-bottom: 1px solid rgba(28,34,53,0.5);
+  white-space: nowrap;
+}
+
+.td-idx { color: var(--dim); }
+.td-input { color: var(--text); }
+.td-hex { color: var(--accent); font-weight: 600; }
+.td-dec { color: var(--green); }
+.td-neg { color: var(--red); }
+.td-char { color: var(--yellow); }
+.td-bits { color: var(--purple); font-size: 10px; letter-spacing: 1px; }
+.td-ok { color: var(--green); font-size: 16px; }
+
+/* Ghidra preset */
+.preset-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 24px;
+  margin-bottom: 28px;
+}
+
+.preset-title {
+  font-size: 13px;
+  color: var(--accent);
+  margin-bottom: 14px;
+  font-weight: 600;
+}
+
+.preset-btn-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.preset-chip {
+  background: var(--panel);
+  border: 1px solid var(--border2);
+  color: var(--dim);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.preset-chip:hover {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Copy feedback */
+.copy-flash {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background: var(--green);
+  color: #000;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 10px 20px;
+  border-radius: 4px;
+  opacity: 0;
+  transform: translateY(10px);
+  transition: all 0.2s;
+  pointer-events: none;
+  z-index: 1000;
+  letter-spacing: 1px;
+}
+.copy-flash.show { opacity: 1; transform: translateY(0); }
+
+/* empty state */
+.empty { color: var(--dim); font-size: 12px; padding: 20px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="logo">byte<span>.</span>calc</div>
+    <div class="tag">REVERSE ENGINEERING TOOL</div>
+  </header>
+
+  <!-- SINGLE CONVERTER -->
+  <div class="section-label">conversor unitário</div>
+  <div class="single-box">
+    <div class="input-row">
+      <input class="input-field" id="singleInput" placeholder="ex: -0x1f" oninput="convertSingle()" autocomplete="off" spellcheck="false">
+      <div class="input-hint">
+        aceita: <span style="color:var(--accent)">-0x1f</span> &nbsp;·&nbsp; <span style="color:var(--green)">-31</span> &nbsp;·&nbsp; <span style="color:var(--purple)">0xe1</span> &nbsp;·&nbsp; <span style="color:var(--yellow)">'a'</span>
+      </div>
+    </div>
+
+    <div class="results" id="singleResults">
+      <div class="result-card c-hex"><div class="rc-label">HEX</div><div class="rc-value" id="r-hex">—</div></div>
+      <div class="result-card c-dec"><div class="rc-label">DECIMAL</div><div class="rc-value" id="r-dec">—</div></div>
+      <div class="result-card c-neg"><div class="rc-label">SIGNED (C)</div><div class="rc-value" id="r-neg">—</div></div>
+      <div class="result-card c-char"><div class="rc-label">ASCII</div><div class="rc-value" id="r-char">—</div><div class="rc-sub" id="r-char-code"></div></div>
+      <div class="result-card c-bin"><div class="rc-label">BINÁRIO</div><div class="rc-value" id="r-bin">—</div></div>
+    </div>
+
+    <div class="bit-bar" id="bitBar">
+      <!-- gerado por JS -->
+    </div>
+  </div>
+
+  <!-- BATCH CONVERTER -->
+  <div class="section-label">conversor em lote — cole do Ghidra</div>
+  <div class="batch-box">
+    <div class="batch-hint">
+      Cole as linhas diretamente do Ghidra. Aceita qualquer formato:<br>
+      <span style="color:var(--accent)">local_58[0] = -0x1f;</span> &nbsp;ou&nbsp; <span style="color:var(--green)">-0x1f, -0x59, 0x1e, -8, 'u'</span> &nbsp;ou&nbsp; linha por linha
+    </div>
+    <textarea class="batch-input" id="batchInput" placeholder="local_58[0] = -0x1f;&#10;local_58[1] = -0x59;&#10;local_58[2] = '\x1e';&#10;local_58[3] = -8;&#10;local_58[4] = 'u';&#10;..." spellcheck="false"></textarea>
+    <div class="batch-actions">
+      <button class="btn primary" onclick="convertBatch()">▶ Converter</button>
+      <button class="btn" onclick="loadPerplexed()">Carregar perplexed</button>
+      <button class="btn" onclick="clearBatch()">Limpar</button>
+      <button class="btn" onclick="copyBytes()">Copiar bytes[]</button>
+      <button class="btn" onclick="copyHex()">Copiar hex string</button>
+    </div>
+    <div id="batchOut"></div>
+  </div>
+
+  <!-- PRESET GHIDRA -->
+  <div class="section-label">atalhos comuns do ghidra</div>
+  <div class="preset-box">
+    <div class="preset-title">Clique para inserir no conversor unitário:</div>
+    <div class="preset-btn-grid" id="presetGrid"></div>
+  </div>
+
+</div>
+
+<div class="copy-flash" id="copyFlash">COPIADO!</div>
+
+<script>
+// ── Conversor unitário ──────────────────────────────────────────
+
+function parseValue(raw) {
+  raw = raw.trim();
+  if (!raw) return null;
+
+  // char literal: 'a' ou '\x1e'
+  if (raw.startsWith("'") && raw.endsWith("'")) {
+    const inner = raw.slice(1, -1);
+    if (inner.startsWith('\\x')) return parseInt(inner.slice(2), 16);
+    if (inner.startsWith('\\')) return inner.charCodeAt(1);
+    return inner.charCodeAt(0);
+  }
+
+  // hex positivo: 0xNN
+  if (/^0x[0-9a-fA-F]+$/i.test(raw)) return parseInt(raw, 16);
+
+  // hex negativo: -0xNN
+  if (/^-0x[0-9a-fA-F]+$/i.test(raw)) {
+    const mag = parseInt(raw.slice(1), 16);
+    return (-mag) & 0xff;
+  }
+
+  // decimal (positivo ou negativo)
+  const n = parseInt(raw, 10);
+  if (!isNaN(n)) return n & 0xff;
+
+  return null;
+}
+
+function convertSingle() {
+  const raw = document.getElementById('singleInput').value;
+  const val = parseValue(raw);
+  const cards = document.querySelectorAll('.result-card');
+
+  if (val === null || isNaN(val)) {
+    ['r-hex','r-dec','r-neg','r-bin','r-char'].forEach(id => {
+      document.getElementById(id).textContent = '—';
+    });
+    document.getElementById('r-char-code').textContent = '';
+    renderBits(null);
+    cards.forEach(c => c.classList.remove('has-value'));
+    return;
+  }
+
+  const byte = val & 0xff;
+  const signed = byte >= 128 ? byte - 256 : byte;
+  const hexStr = '0x' + byte.toString(16).padStart(2,'0').toUpperCase();
+  const binStr = byte.toString(2).padStart(8,'0');
+  const isPrint = byte >= 32 && byte < 127;
+
+  document.getElementById('r-hex').textContent = hexStr;
+  document.getElementById('r-dec').textContent = byte;
+  document.getElementById('r-neg').textContent = signed >= 0 ? '+' + signed : signed;
+  document.getElementById('r-bin').textContent = binStr.match(/.{4}/g).join(' ');
+  document.getElementById('r-char').textContent = isPrint ? String.fromCharCode(byte) : '·';
+  document.getElementById('r-char-code').textContent = isPrint ? 'imprimível' : 'não imprimível';
+
+  cards.forEach(c => c.classList.add('has-value'));
+  renderBits(byte);
+}
+
+function renderBits(byte) {
+  const bar = document.getElementById('bitBar');
+  bar.innerHTML = '';
+  for (let i = 7; i >= 0; i--) {
+    const cell = document.createElement('div');
+    cell.className = 'bit-cell';
+    if (byte !== null) {
+      const bit = (byte >> i) & 1;
+      if (bit) cell.classList.add('on');
+      cell.innerHTML = bit + '<div class="bit-pos">' + i + '</div>';
+    } else {
+      cell.innerHTML = '·<div class="bit-pos">' + i + '</div>';
+    }
+    bar.appendChild(cell);
+  }
+}
+
+renderBits(null);
+
+// ── Presets ─────────────────────────────────────────────────────
+
+const PRESETS = [
+  '-0x1f', '-0x59', '-8', '-0x47', '-99', '-4',
+  '-0x21', '-2', '-0x13', '-0xc', '-0x3f', '-1',
+  '-0x80', '-0x7f', '0xff', '0x80', "'a'", "'Z'",
+  "'u'", "'['", "'{'", "'#'", "'i'", "'g'"
+];
+
+const grid = document.getElementById('presetGrid');
+PRESETS.forEach(p => {
+  const chip = document.createElement('button');
+  chip.className = 'preset-chip';
+  chip.textContent = p;
+  chip.onclick = () => {
+    document.getElementById('singleInput').value = p;
+    convertSingle();
+  };
+  grid.appendChild(chip);
+});
+
+// ── Batch converter ─────────────────────────────────────────────
+
+function extractValues(text) {
+  const results = [];
+  // Estratégia: achar todos os tokens que pareçam valores
+  const tokenRe = /(-0x[0-9a-fA-F]+|-\d+|0x[0-9a-fA-F]+|'\\'?[^']+?'|\d+)/g;
+  const lines = text.split('\n');
+
+  lines.forEach((line, li) => {
+    line = line.trim();
+    if (!line || line.startsWith('//') || line.startsWith('*')) return;
+
+    // Tenta pegar "= VALUE;" ou "VALUE," ou só "VALUE"
+    const matches = [...line.matchAll(tokenRe)];
+    if (!matches.length) return;
+
+    // Pega o último match da linha (normalmente o valor após o =)
+    const raw = matches[matches.length - 1][0];
+    const val = parseValue(raw);
+    if (val !== null && !isNaN(val)) {
+      results.push({ line: li + 1, raw, val: val & 0xff });
+    }
+  });
+
+  return results;
+}
+
+let lastBatchResults = [];
+
+function convertBatch() {
+  const text = document.getElementById('batchInput').value;
+  const rows = extractValues(text);
+  lastBatchResults = rows;
+
+  const out = document.getElementById('batchOut');
+  if (!rows.length) {
+    out.innerHTML = '<div class="empty">Nenhum valor reconhecido. Verifique o formato.</div>';
+    return;
+  }
+
+  let html = '<div class="batch-table-wrap"><table><thead><tr>'
+    + '<th>#</th><th>Entrada</th><th>HEX</th><th>DEC</th><th>SIGNED</th><th>ASCII</th><th>BINÁRIO</th>'
+    + '</tr></thead><tbody>';
+
+  rows.forEach((r, i) => {
+    const signed = r.val >= 128 ? r.val - 256 : r.val;
+    const isPrint = r.val >= 32 && r.val < 127;
+    const hexStr = '0x' + r.val.toString(16).padStart(2,'0').toUpperCase();
+    const binStr = r.val.toString(2).padStart(8,'0').match(/.{4}/g).join(' ');
+    const charStr = isPrint ? String.fromCharCode(r.val) : '·';
+
+    html += `<tr>
+      <td class="td-idx">[${i}]</td>
+      <td class="td-input">${r.raw}</td>
+      <td class="td-hex">${hexStr}</td>
+      <td class="td-dec">${r.val}</td>
+      <td class="td-neg">${signed}</td>
+      <td class="td-char">${charStr}</td>
+      <td class="td-bits">${binStr}</td>
+    </tr>`;
+  });
+
+  html += '</tbody></table></div>';
+
+  // Summary
+  const hexLine = rows.map(r => '0x' + r.val.toString(16).padStart(2,'0')).join(', ');
+  html += `<div style="margin-top:14px;padding:12px 16px;background:var(--panel);border-radius:6px;border:1px solid var(--border);">
+    <div style="font-size:10px;letter-spacing:2px;color:var(--dim);margin-bottom:8px;">RESULTADO · ${rows.length} BYTES</div>
+    <div style="font-size:12px;color:var(--accent);word-break:break-all;line-height:2">${hexLine}</div>
+  </div>`;
+
+  out.innerHTML = html;
+}
+
+function loadPerplexed() {
+  document.getElementById('batchInput').value =
+`local_58[0] = -0x1f;
+local_58[1] = -0x59;
+local_58[2] = '\\x1e';
+local_58[3] = -8;
+local_58[4] = 'u';
+local_58[5] = '#';
+local_58[6] = '{';
+local_58[7] = 'a';
+local_58[8] = -0x47;
+local_58[9] = -99;
+local_58[10] = -4;
+local_58[0xb] = 'Z';
+local_58[0xc] = '[';
+local_58[0xd] = -0x21;
+local_58[0xe] = 'i';
+local_58[0xf] = 0xd2;
+local_58[0x10] = -2;
+local_58[0x11] = '\\x1b';
+local_58[0x12] = -0x13;
+local_58[0x13] = -0xc;
+local_58[0x14] = -0x13;
+local_58[0x15] = 'g';
+local_58[0x16] = -0xc;`;
+  convertBatch();
+}
+
+function clearBatch() {
+  document.getElementById('batchInput').value = '';
+  document.getElementById('batchOut').innerHTML = '';
+  lastBatchResults = [];
+}
+
+function copyBytes() {
+  if (!lastBatchResults.length) { convertBatch(); }
+  if (!lastBatchResults.length) return;
+  const text = 'bytes([\n    ' +
+    lastBatchResults.map(r => '0x' + r.val.toString(16).padStart(2,'0')).join(', ') +
+    '\n])';
+  navigator.clipboard.writeText(text).then(() => flash());
+}
+
+function copyHex() {
+  if (!lastBatchResults.length) { convertBatch(); }
+  if (!lastBatchResults.length) return;
+  const text = lastBatchResults.map(r => r.val.toString(16).padStart(2,'0')).join('');
+  navigator.clipboard.writeText(text).then(() => flash());
+}
+
+function flash() {
+  const el = document.getElementById('copyFlash');
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 1800);
+}
+
+// Enter no single input
+document.getElementById('singleInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') convertSingle();
+});
+</script>
+</body>
+</html>
